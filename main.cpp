@@ -178,7 +178,7 @@ int main(int argc, char **argv)
     vector<document> testing = readDatasetFromFile(file, argv[2]);
 
     training_score = test(training, classifier);
-    testing_score = test(testing, classifier);//, true);
+    testing_score = test(testing, classifier, true);
 
     auto test = std::chrono::steady_clock::now();
 
