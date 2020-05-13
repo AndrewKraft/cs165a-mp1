@@ -5,10 +5,9 @@
 #include <sstream>
 #include <chrono>
 #include <complex>
+#include <algorithm>
 
 using namespace std;
-
-#define PRINT_DATASET(d) printDataset(d, #d)
 
 int alpha = 1;
 
@@ -21,10 +20,10 @@ struct document
 
 struct data
 {
-    int num=0, pos = 0, neg = 0;
+    int pos = 0, neg = 0;
 };
 
-struct feature
+struct probability
 {
     double ppos = 0, pneg = 0;
 };
@@ -83,19 +82,20 @@ void tfIdfVectorize(vector<document>& raw)
     }
 }
 
-unordered_map<string, feature> summary(const vector<document>& raw)
+unordered_map<string, probability> summary(const vector<document>& raw)
 {
-    unordered_map<string, feature> output;
-    unordered_map<string, data> dMap;
+    unordered_map<string, probability> output;
+    unordered_map<string, data> dTable;
+
     data d;
-    feature f;
+    probability f;
+
     int numPos = 0, numNeg = 0;
     for (auto i : raw)
     {
         for (auto j : i.words)
         {
-            auto it = dMap.insert(pair<string, data>(j.first, d)).first;
-            it->second.num++;
+            auto it = dTable.insert(pair<string, data>(j.first, d)).first;
             if (i.pos)
             {
                 it->second.pos += j.second;
@@ -108,17 +108,17 @@ unordered_map<string, feature> summary(const vector<document>& raw)
             }
         }
     }
-    for (auto i : dMap)
+    for (auto i : dTable)
     {
-        auto it = output.insert(pair<string, feature>(i.first, f)).first;
-        it->second.ppos = (i.second.pos + alpha) / (double)(numPos + alpha*dMap.size());
-        it->second.pneg = (i.second.neg + alpha) / (double)(numNeg + alpha*dMap.size());
+        auto it = output.insert(pair<string, probability>(i.first, f)).first;
+        it->second.ppos = (i.second.pos + alpha) / (double)(numPos + alpha*dTable.size());
+        it->second.pneg = (i.second.neg + alpha) / (double)(numNeg + alpha*dTable.size());
     }
 
     return output;
 }
 
-double test(const vector<document>& dataset, const unordered_map<string, feature>& classifier, bool out=0)
+double test(const vector<document>& dataset, const unordered_map<string, probability>& pTable, bool out=0)
 {
     int correct = 0;
     for (auto i : dataset)
@@ -129,8 +129,8 @@ double test(const vector<document>& dataset, const unordered_map<string, feature
         {
             try
             {
-                logpos += j.second * log(classifier.at(j.first).ppos);
-                logneg += j.second * log(classifier.at(j.first).pneg);
+                logpos += j.second * log(pTable.at(j.first).ppos);
+                logneg += j.second * log(pTable.at(j.first).pneg);
             }
             catch (const exception& e) {}
         }
@@ -143,16 +143,20 @@ double test(const vector<document>& dataset, const unordered_map<string, feature
     return correct / (double)dataset.size();
 }
 
-void printDataset(vector<document> dataset, string name)
-{
-    cout << "---printing " << name << "---\n";
-    for(auto i : dataset) 
+void importantFeatures(const unordered_map<string, probability>& pTable) {
+    vector<pair<string, double>> sigprobabilities;
+    double significance;
+    for(auto i : pTable) {
+        significance = log(i.second.ppos) - log(i.second.pneg);
+        sigprobabilities.push_back(pair<string, double>(i.first, significance));
+    }
+    sort(sigprobabilities.begin(), sigprobabilities.end(), [&](auto a, auto b)
     {
-        for(auto j : i.words)
-        {
-            cout << j.first << " " << j.second << " ";
-        }
-        cout << endl;
+        return a.second > b.second;
+    });
+
+    for(auto i : sigprobabilities) {
+        cout << i.first << " " << i.second << endl;
     }
 }
 
@@ -171,14 +175,14 @@ int main(int argc, char **argv)
 
     vector<document> training = readDatasetFromFile(file, argv[1]);
 
-    unordered_map<string, feature> classifier = summary(training);
+    unordered_map<string, probability> pTable = summary(training);
 
     auto train = std::chrono::steady_clock::now();
 
     vector<document> testing = readDatasetFromFile(file, argv[2]);
 
-    training_score = test(training, classifier);
-    testing_score = test(testing, classifier, true);
+    training_score = test(training, pTable);
+    testing_score = test(testing, pTable, true);
 
     auto test = std::chrono::steady_clock::now();
 
